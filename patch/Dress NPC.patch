@@ -1,0 +1,225 @@
+Index: server/game/Globals/ObjectMgr.cpp
+===================================================================
+--- server/game/Globals/ObjectMgr.cpp	(revision 1)
++++ server/game/Globals/ObjectMgr.cpp	(working copy)
+@@ -7785,6 +7785,78 @@
+     }
+ }
+ 
++void ObjectMgr::LoadCreatureOutfits()
++{
++    uint32 oldMSTime = getMSTime();
++
++    _creatureOutfitStore.clear();                           // for reload case (test only)
++
++    //                                                 0     1      2      3     4     5       6           7
++    QueryResult result = WorldDatabase.Query("SELECT entry, race, gender, skin, face, hair, haircolor, facialhair, "
++        //8       9        10    11     12     13    14     15     16     17     18
++        "head, shoulders, body, chest, waist, legs, feet, wrists, hands, back, tabard FROM creature_template_outfits");
++
++    if (!result)
++    {
++        TC_LOG_ERROR("server.loading", ">> Loaded 0 creature outfits. DB table `creature_template_outfits` is empty!");
++        return;
++    }
++
++    uint32 count = 0;
++
++    do
++    {
++        Field* fields = result->Fetch();
++
++        uint32 i = 0;
++        uint32 entry   = fields[i++].GetUInt32();
++
++        if (!GetCreatureTemplate(entry))
++        {
++            TC_LOG_ERROR("server.loading", ">> Creature entry %u in `creature_template_outfits`, but not in `creature_template`!", entry);
++            continue;
++        }
++
++        CreatureOutfit co; // const, shouldnt be changed after saving
++        co.race         = fields[i++].GetUInt8();
++        const ChrRacesEntry* rEntry = sChrRacesStore.LookupEntry(co.race);
++        if (!rEntry)
++        {
++            TC_LOG_ERROR("server.loading", ">> Creature entry %u in `creature_template_outfits` has incorrect race (%u).", entry, uint32(co.race));
++            continue;
++        }
++        co.gender       = fields[i++].GetUInt8();
++        // Set correct displayId
++        switch (co.gender)
++        {
++        case GENDER_FEMALE: _creatureTemplateStore[entry].Modelid1    = rEntry->model_f;    break;
++        case GENDER_MALE:   _creatureTemplateStore[entry].Modelid1    = rEntry->model_m;    break;
++        default:
++            TC_LOG_ERROR("server.loading", ">> Creature entry %u in `creature_template_outfits` has invalid gender %u", entry, uint32(co.gender));
++            continue;
++        }
++        _creatureTemplateStore[entry].Modelid2 = 0;
++        _creatureTemplateStore[entry].Modelid3 = 0;
++        _creatureTemplateStore[entry].Modelid4 = 0;
++        _creatureTemplateStore[entry].unit_flags2 |= UNIT_FLAG2_MIRROR_IMAGE; // Needed so client requests mirror packet
++
++        co.skin         = fields[i++].GetUInt8();
++        co.face         = fields[i++].GetUInt8();
++        co.hair         = fields[i++].GetUInt8();
++        co.haircolor    = fields[i++].GetUInt8();
++        co.facialhair   = fields[i++].GetUInt8();
++        for (uint32 j = 0; j < MAX_CREATURE_OUTFIT_DISPLAYS; ++j)
++            co.outfit[j]    = fields[i+j].GetUInt32();
++
++        _creatureOutfitStore[entry] = co;
++
++        ++count;
++    }
++    while (result->NextRow());
++
++    TC_LOG_INFO("server.loading", ">> Loaded %u creature outfits in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
++}
++
+ void ObjectMgr::LoadGameTele()
+ {
+     uint32 oldMSTime = getMSTime();
+Index: server/game/Globals/ObjectMgr.h
+===================================================================
+--- server/game/Globals/ObjectMgr.h	(revision 1)
++++ server/game/Globals/ObjectMgr.h	(working copy)
+@@ -144,6 +144,21 @@
+ 
+ typedef UNORDERED_MAP<uint32, GameTele > GameTeleContainer;
+ 
++#define MAX_CREATURE_OUTFIT_DISPLAYS 11
++struct CreatureOutfit
++{
++    uint8 race;
++    uint8 gender;
++    uint8 face;
++    uint8 skin;
++    uint8 hair;
++    uint8 facialhair;
++    uint8 haircolor;
++    uint32 outfit[MAX_CREATURE_OUTFIT_DISPLAYS];
++};
++
++typedef UNORDERED_MAP<uint32, CreatureOutfit > CreatureOutfitContainer;
++
+ enum ScriptsType
+ {
+     SCRIPTS_FIRST = 1,
+@@ -966,6 +981,7 @@
+ 
+         void LoadNPCSpellClickSpells();
+ 
++        void LoadCreatureOutfits();
+         void LoadGameTele();
+ 
+         void LoadGossipMenu();
+@@ -1166,6 +1182,8 @@
+         bool AddGameTele(GameTele& data);
+         bool DeleteGameTele(std::string const& name);
+ 
++        CreatureOutfitContainer* GetCreatureOutfitMap() { return &_creatureOutfitStore; }
++
+         TrainerSpellData const* GetNpcTrainerSpells(uint32 entry) const
+         {
+             CacheTrainerSpellContainer::const_iterator  iter = _cacheTrainerSpellStore.find(entry);
+@@ -1310,6 +1328,8 @@
+         PageTextContainer _pageTextStore;
+         InstanceTemplateContainer _instanceTemplateStore;
+ 
++        CreatureOutfitContainer _creatureOutfitStore;
++
+     private:
+         void LoadScripts(ScriptsType type);
+         void CheckScripts(ScriptsType type, std::set<int32>& ids);
+Index: server/game/Handlers/SpellHandler.cpp
+===================================================================
+--- server/game/Handlers/SpellHandler.cpp	(revision 1)
++++ server/game/Handlers/SpellHandler.cpp	(working copy)
+@@ -566,6 +566,34 @@
+     if (!unit)
+         return;
+ 
++    if (unit->ToCreature())
++    {
++        CreatureOutfitContainer* outfits = sObjectMgr->GetCreatureOutfitMap();
++        CreatureOutfitContainer::const_iterator it = outfits->find(unit->GetEntry());
++        if (it != outfits->end())
++        {
++            WorldPacket data(SMSG_MIRRORIMAGE_DATA, 68);
++            data << uint64(guid);
++            data << uint32(unit->GetDisplayId());   // displayId
++            data << uint8(it->second.race);         // race
++            data << uint8(it->second.gender);       // gender
++            data << uint8(1);                       // class
++            data << uint8(it->second.skin);         // skin
++            data << uint8(it->second.face);         // face
++            data << uint8(it->second.hair);         // hair
++            data << uint8(it->second.haircolor);    // haircolor
++            data << uint8(it->second.facialhair);   // facialhair
++            data << uint32(0);                      // guildId
++
++            // item displays
++            for (uint32 i = 0; i < MAX_CREATURE_OUTFIT_DISPLAYS; ++i)
++                data << uint32(it->second.outfit[i]);
++
++            SendPacket(&data);
++            return;
++        }
++    }
++
+     if (!unit->HasAuraType(SPELL_AURA_CLONE_CASTER))
+         return;
+ 
+
+
+Index: server/game/World/World.cpp
+===================================================================
+--- server/game/World/World.cpp	(revision 1)
++++ server/game/World/World.cpp	(working copy)
+@@ -1442,6 +1442,9 @@
+     TC_LOG_INFO("server.loading", "Loading Creature templates...");
+     sObjectMgr->LoadCreatureTemplates();
+ 
++    TC_LOG_INFO("server.loading", "Loading Creature template outfits...");     // must be after LoadCreatureTemplates
++    sObjectMgr->LoadCreatureOutfits();
++
+     TC_LOG_INFO("server.loading", "Loading Equipment templates...");           // must be after LoadCreatureTemplates
+     sObjectMgr->LoadEquipmentTemplates();
+ 
+Index: server/scripts/Commands/cs_reload.cpp
+===================================================================
+--- server/scripts/Commands/cs_reload.cpp	(revision 1)
++++ server/scripts/Commands/cs_reload.cpp	(working copy)
+@@ -85,6 +85,7 @@
+             { "creature_queststarter",         rbac::RBAC_PERM_COMMAND_RELOAD_CREATURE_QUESTSTARTER, true,  &HandleReloadCreatureQuestStarterCommand,     "", NULL },
+             { "creature_summon_groups",        rbac::RBAC_PERM_COMMAND_RELOAD_CREATURE_SUMMON_GROUPS, true,  &HandleReloadCreatureSummonGroupsCommand,       "", NULL },
+             { "creature_template",             rbac::RBAC_PERM_COMMAND_RELOAD_CREATURE_TEMPLATE, true,  &HandleReloadCreatureTemplateCommand,           "", NULL },
++			{ "creature_template_outfits",     rbac::RBAC_PERM_COMMAND_RELOAD_CREATURE_TEMPLATE, true,  &HandleReloadCreatureTemplateOutfitsCommand,    "", NULL },
+             //{ "db_script_string",              rbac::RBAC_PERM_COMMAND_RELOAD_, true,  &HandleReloadDbScriptStringCommand,            "", NULL },
+             { "disables",                      rbac::RBAC_PERM_COMMAND_RELOAD_DISABLES, true,  &HandleReloadDisablesCommand,                   "", NULL },
+             { "disenchant_loot_template",      rbac::RBAC_PERM_COMMAND_RELOAD_DISENCHANT_LOOT_TEMPLATE, true,  &HandleReloadLootTemplatesDisenchantCommand,    "", NULL },
+@@ -194,6 +195,7 @@
+         HandleReloadGameTeleCommand(handler, "");
+ 
+         HandleReloadCreatureSummonGroupsCommand(handler, "");
++        HandleReloadCreatureTemplateOutfitsCommand(handler, "");
+ 
+         HandleReloadVehicleAccessoryCommand(handler, "");
+         HandleReloadVehicleTemplateAccessoryCommand(handler, "");
+@@ -520,6 +522,14 @@
+         return true;
+     }
+ 
++    static bool HandleReloadCreatureTemplateOutfitsCommand(ChatHandler* handler, const char* /*args*/)
++    {
++        TC_LOG_INFO("misc", "Loading Creature Outfits... (`creature_template_outfits`)");
++        sObjectMgr->LoadCreatureOutfits();
++        handler->SendGlobalGMSysMessage("DB table `creature_template_outfits` reloaded.");
++        return true;
++    }
++
+     static bool HandleReloadCreatureQuestStarterCommand(ChatHandler* handler, const char* /*args*/)
+     {
+         TC_LOG_INFO("misc", "Loading Quests Relations... (`creature_queststarter`)");

@@ -1,0 +1,1 @@
+ALTER TABLE `wow_auth`.`rbac_account_permissions`     ADD COLUMN `comment` VARCHAR(255) NULL AFTER `realmId`;
