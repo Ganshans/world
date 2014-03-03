@@ -1454,6 +1454,8 @@ void AddSC_custom_CongratsOnLevel();
 void AddSC_Class_NPC();
 void AddSC_item_enchant_visuals();
 void AddSC_npc_changer();
+void AddSC_REFORGER_NPC();
+void AddSC_CPWS_Transmogrification();
 #endif
 
 void AddCustomScripts()
@@ -1479,5 +1481,7 @@ void AddCustomScripts()
 	AddSC_Class_NPC();
 	AddSC_item_enchant_visuals();
 	AddSC_npc_changer();
+	AddSC_REFORGER_NPC();
+	AddSC_CPWS_Transmogrification();
 #endif
 }

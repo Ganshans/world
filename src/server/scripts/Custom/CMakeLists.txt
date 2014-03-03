@@ -17,6 +17,10 @@ set(scripts_STAT_SRCS
   Custom/classtrainer.cpp
   Custom/enchant_visuals.cpp
   Custom/change_faction_race.cpp
+  Custom/Reforging.cpp
+  Custom/Transmogrification.h
+  Custom/Transmogrification.cpp
+  Custom/Transmogrifier.cpp
 )
 
 message("  -> Prepared: Custom")
