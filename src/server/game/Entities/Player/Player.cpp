@@ -13479,7 +13479,7 @@ void Player::SetVisibleItemSlot(uint8 slot, Item* pItem)
 {
     if (pItem)
     {
-        +        // custom
+        
 			if (uint32 entry = sTransmogrification->GetFakeEntry(pItem->GetGUID()))
             SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), entry);
 			else
