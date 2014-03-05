@@ -1,0 +1,1 @@
+UPDATE `trinity_string` SET `content_default`='|cffffff00[|c00077766WoW-Universum|cffffff00]: |cFFF222FF%s|r' WHERE `entry`='11000';

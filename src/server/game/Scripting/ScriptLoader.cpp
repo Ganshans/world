@@ -696,7 +696,7 @@ void AddSC_outdoorpvp_zm();
 // player
 void AddSC_chat_log();
 
-void AddSC_npc_lottery();
+void AddSC_CPWS_Transmogrification();
 #endif
 
 void AddScripts()
@@ -1456,6 +1456,7 @@ void AddSC_item_enchant_visuals();
 void AddSC_npc_changer();
 void AddSC_REFORGER_NPC();
 void AddSC_CPWS_Transmogrification();
+void AddSC_Npc_Beastmaster();
 #endif
 
 void AddCustomScripts()
@@ -1483,5 +1484,6 @@ void AddCustomScripts()
 	AddSC_npc_changer();
 	AddSC_REFORGER_NPC();
 	AddSC_CPWS_Transmogrification();
+	AddSC_Npc_Beastmaster();
 #endif
 }
